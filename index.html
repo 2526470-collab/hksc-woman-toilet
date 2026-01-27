@@ -1,114 +1,79 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>女性廁所清潔管理系統</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即時同步 - 女性廁所管理系統</title>
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-database-compat.js"></script>
     <style>
-      body {
-        font-family: 'Microsoft JhengHei', sans-serif;
-        background-color: #f4f7f6;
-        padding: 20px;
-      }
-      h1 {
-        text-align: center;
-        color: #d81b60;
-      }
-      .floor-container {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        max-width: 800px;
-        margin: 0 auto;
-      }
-      .floor-card {
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        padding: 15px;
-        border-left: 5px solid #d81b60;
-      }
-      .floor-title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        margin-bottom: 10px;
-        color: #333;
-      }
-      .cubicle-grid {
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 10px;
-      }
-      .cubicle {
-        border: 1px solid #ddd;
-        padding: 10px;
-        text-align: center;
-        border-radius: 4px;
-      }
-      .status-btn {
-        border: none;
-        padding: 8px 12px;
-        border-radius: 20px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        transition: 0.3s;
-        margin-top: 5px;
-        width: 100%;
-      }
-      .status-clear {
-        background-color: #e8f5e9;
-        color: #2e7d32;
-      }
-      .status-dirty {
-        background-color: #ffebee;
-        color: #c62828;
-      }
-      .status-btn:hover {
-        opacity: 0.8;
-      }
+        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f4f7f6; padding: 20px; }
+        h1 { text-align: center; color: #cf4f7e; }
+        .floor-container { display: flex; flex-direction: column; gap: 20px; max-width: 800px; margin: 0 auto; }
+        .floor-card { background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 15px; border-left: 5px solid #d81b60; }
+        .cubicle-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+        .cubicle { border: 1px solid #ddd; padding: 10px; text-align: center; border-radius: 4px; }
+        .status-btn { border: none; padding: 8px 12px; border-radius: 20px; cursor: pointer; width: 100%; transition: 0.3s; }
+        .status-clear { background-color: #e8f5e9; color: #2e7d32; }
+        .status-dirty { background-color: #ffebee; color: #c62828; }
     </style>
-  </head>
-  <body>
-    <h1>🚺 樓層廁所狀態監控</h1>
+</head>
+<body>
 
+    <h1>🚺 即時同步監控系統</h1>
     <div class="floor-container" id="system-root"></div>
 
     <script>
-      const floors = ['G', '1', '2', '3', '4', '5'];
-      const container = document.getElementById('system-root');
+        // --- 1. Firebase 配置 (請替換成您自己的 API Key) ---
+        const firebaseConfig = {
+            databaseURL: "https://你的專案ID.firebaseio.com" 
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
-      floors.forEach((floor) => {
-        const floorDiv = document.createElement('div');
-        floorDiv.className = 'floor-card';
+        // --- 2. 生成樓層介面 ---
+        const floors = ['G', '1', '2', '3', '4', '5'];
+        const container = document.getElementById('system-root');
 
-        let cubiclesHtml = '';
-        for (let i = 1; i <= 5; i++) {
-          cubiclesHtml += `
+        floors.forEach(floor => {
+            const floorDiv = document.createElement('div');
+            floorDiv.className = 'floor-card';
+            let cubiclesHtml = '';
+            for (let i = 1; i <= 5; i++) {
+                const id = `${floor}_${i}`;
+                cubiclesHtml += `
                     <div class="cubicle">
-                        <div>第 ${i} 廁間</div>
-                        <button class="status-btn status-clear" onclick="toggleStatus(this)">乾淨</button>
+                        <div>${i} 號</div>
+                        <button id="${id}" class="status-btn status-clear" onclick="updateDB('${id}')">載入中...</button>
                     </div>
                 `;
-        }
+            }
+            floorDiv.innerHTML = `<div class="floor-title">${floor} 樓</div><div class="cubicle-grid">${cubiclesHtml}</div>`;
+            container.appendChild(floorDiv);
+        });
 
-        floorDiv.innerHTML = `
-                <div class="floor-title">${floor} 樓</div>
-                <div class="cubicle-grid">${cubiclesHtml}</div>
-            `;
-        container.appendChild(floorDiv);
-      });
+        // --- 3. 同步邏輯 ---
+        // 監聽資料庫變化並更新畫面
+        db.ref('toilets').on('value', (snapshot) => {
+            const data = snapshot.val() || {};
+            for (let floor of floors) {
+                for (let i = 1; i <= 5; i++) {
+                    const id = `${floor}_${i}`;
+                    const btn = document.getElementById(id);
+                    const isDirty = data[id] === 'dirty';
+                    
+                    btn.innerText = isDirty ? '髒汙' : '乾淨';
+                    btn.className = `status-btn ${isDirty ? 'status-dirty' : 'status-clear'}`;
+                }
+            }
+        });
 
-      function toggleStatus(btn) {
-        if (btn.innerText === '乾淨') {
-          btn.innerText = '髒汙';
-          btn.classList.remove('status-clear');
-          btn.classList.add('status-dirty');
-        } else {
-          btn.innerText = '乾淨';
-          btn.classList.remove('status-dirty');
-          btn.classList.add('status-clear');
+        // 點擊按鈕更新資料庫
+        function updateDB(id) {
+            const btn = document.getElementById(id);
+            const nextStatus = btn.innerText === '乾淨' ? 'dirty' : 'clear';
+            db.ref('toilets/' + id).set(nextStatus);
         }
-      }
     </script>
-  </body>
+</body>
 </html>
