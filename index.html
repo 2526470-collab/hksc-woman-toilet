@@ -3,77 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>即時同步 - 女性廁所管理系統</title>
-    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-database-compat.js"></script>
+    <title>女廁清潔監控 - Supabase 版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f4f7f6; padding: 20px; }
-        h1 { text-align: center; color: #cf4f7e; }
-        .floor-container { display: flex; flex-direction: column; gap: 20px; max-width: 800px; margin: 0 auto; }
-        .floor-card { background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 15px; border-left: 5px solid #d81b60; }
-        .cubicle-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-        .cubicle { border: 1px solid #ddd; padding: 10px; text-align: center; border-radius: 4px; }
-        .status-btn { border: none; padding: 8px 12px; border-radius: 20px; cursor: pointer; width: 100%; transition: 0.3s; }
-        .status-clear { background-color: #e8f5e9; color: #2e7d32; }
-        .status-dirty { background-color: #ffebee; color: #c62828; }
+        :root { --primary: #d81b60; --bg: #f4f7f6; --clear: #2e7d32; --dirty: #c62828; }
+        body { font-family: sans-serif; background: var(--bg); padding: 20px; margin: 0; }
+        h1 { text-align: center; color: var(--primary); }
+        .floor-container { max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+        .floor-card { background: white; padding: 15px; border-radius: 10px; border-left: 6px solid var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .floor-name { font-weight: bold; margin-bottom: 10px; font-size: 1.1em; }
+        .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+        .cubicle { text-align: center; }
+        .label { font-size: 0.75em; color: #666; margin-bottom: 4px; }
+        .btn { border: none; padding: 10px 0; width: 100%; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 0.85em; }
+        .btn-clear { background: #e8f5e9; color: var(--clear); }
+        .btn-dirty { background: #ffebee; color: var(--dirty); }
+        .btn:disabled { opacity: 0.5; cursor: wait; }
     </style>
 </head>
 <body>
 
-    <h1>🚺 即時同步監控系統</h1>
-    <div class="floor-container" id="system-root"></div>
+    <h1>🚺 廁所即時狀態同步</h1>
+    <div class="floor-container" id="app"></div>
 
     <script>
-        // --- 1. Firebase 配置 (請替換成您自己的 API Key) ---
-        const firebaseConfig = {
-            databaseURL: "https://你的專案ID.firebaseio.com" 
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        // 1. 初始化 Supabase (請替換下方資訊)
+        const SB_URL = 'https://jhuwrvxokixfwoqjdcii.supabase.co';
+        const SB_KEY = 'sb_publishable_LwcF0ONxWLH5E1rY2p1f9g_PwqEEIrF';
+        const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
 
-        // --- 2. 生成樓層介面 ---
         const floors = ['G', '1', '2', '3', '4', '5'];
-        const container = document.getElementById('system-root');
+        const app = document.getElementById('app');
 
-        floors.forEach(floor => {
-            const floorDiv = document.createElement('div');
-            floorDiv.className = 'floor-card';
-            let cubiclesHtml = '';
+        // 2. 渲染 UI
+        floors.forEach(f => {
+            const card = document.createElement('div');
+            card.className = 'floor-card';
+            let html = `<div class="floor-name">${f} 樓</div><div class="grid">`;
             for (let i = 1; i <= 5; i++) {
-                const id = `${floor}_${i}`;
-                cubiclesHtml += `
+                const id = `${f}_${i}`;
+                html += `
                     <div class="cubicle">
-                        <div>${i} 號</div>
-                        <button id="${id}" class="status-btn status-clear" onclick="updateDB('${id}')">載入中...</button>
-                    </div>
-                `;
+                        <div class="label">${i}號</div>
+                        <button id="${id}" class="btn btn-clear" onclick="toggleStatus('${id}')">載入中</button>
+                    </div>`;
             }
-            floorDiv.innerHTML = `<div class="floor-title">${floor} 樓</div><div class="cubicle-grid">${cubiclesHtml}</div>`;
-            container.appendChild(floorDiv);
+            card.innerHTML = html + '</div>';
+            app.appendChild(card);
         });
 
-        // --- 3. 同步邏輯 ---
-        // 監聽資料庫變化並更新畫面
-        db.ref('toilets').on('value', (snapshot) => {
-            const data = snapshot.val() || {};
-            for (let floor of floors) {
-                for (let i = 1; i <= 5; i++) {
-                    const id = `${floor}_${i}`;
-                    const btn = document.getElementById(id);
-                    const isDirty = data[id] === 'dirty';
-                    
-                    btn.innerText = isDirty ? '髒汙' : '乾淨';
-                    btn.className = `status-btn ${isDirty ? 'status-dirty' : 'status-clear'}`;
-                }
-            }
-        });
-
-        // 點擊按鈕更新資料庫
-        function updateDB(id) {
+        // 3. 更新介面函式
+        function updateUI(id, status) {
             const btn = document.getElementById(id);
-            const nextStatus = btn.innerText === '乾淨' ? 'dirty' : 'clear';
-            db.ref('toilets/' + id).set(nextStatus);
+            if (!btn) return;
+            const isDirty = (status === 'dirty');
+            btn.innerText = isDirty ? '髒汙' : '乾淨';
+            btn.className = `btn ${isDirty ? 'btn-dirty' : 'btn-clear'}`;
+            btn.disabled = false;
         }
+
+        // 4. 修改狀態函式
+        async function toggleStatus(id) {
+            const btn = document.getElementById(id);
+            const currentStatus = (btn.innerText === '乾淨') ? 'dirty' : 'clear';
+            btn.disabled = true; // 防止重複點擊
+            
+            await supabaseClient.from('toilet_status').upsert({ cubicle_id: id, status: currentStatus });
+        }
+
+        // 5. 實時訂閱與初始讀取
+        async function start() {
+            // 讀取目前所有狀態
+            const { data } = await supabaseClient.from('toilet_status').select('*');
+            data?.forEach(item => updateUI(item.cubicle_id, item.status));
+            // 如果沒資料的按鈕，設為乾淨
+            document.querySelectorAll('.btn').forEach(b => { if(b.innerText === '載入中') updateUI(b.id, 'clear'); });
+
+            // 訂閱資料庫變動
+            supabaseClient.channel('any')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'toilet_status' }, payload => {
+                    updateUI(payload.new.cubicle_id, payload.new.status);
+                })
+                .subscribe();
+        }
+
+        start();
     </script>
 </body>
 </html>
